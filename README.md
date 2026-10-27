@@ -3,61 +3,88 @@
 像素風視覺小說式的報告影片：一位主持人加上幾位配角串場（目前有 Claude、GPT、DeepSeek、Gemini），誰主持、誰上鏡都寫在設定檔。
 畫面 1920×1080 / 24fps，聲音用 edge-tts，畫面用 Pillow 逐格合成後交給 ffmpeg 編碼。
 
+## 用 GUI 編輯（建議）
+
+```bash
+python studio.py
+```
+
+所有原本要改程式碼或設定檔的項目都在 GUI 裡，`Ctrl+S` 儲存：
+
+| 分頁 | 內容 | 寫入 |
+|---|---|---|
+| 01 劇本 | 段落（頻道、標題、截圖、NOTE 小抄、整段在台的配角）、台詞（講者、表情、文字、鏡頭、換圖）。右側截圖上可以直接拖曳／滾輪框鏡頭；可播放單句語音、預覽單句成品畫面 | `story.json` |
+| 02 蓋章 | 台詞包含某字串時右上角跳出的螢光標籤，並列出每個標籤命中哪幾句 | `story.json` |
+| 03 演出 | 片頭大標／副標／右上角小字、主持人、上鏡配角與站位順序（含站位示意圖） | 報告的 `config.toml` |
+| 04 角色 | 角色名冊：名牌名稱與顏色、edge-tts 聲線／語速／音高（可試聽）、像素立繪、片頭角色卡與角色卡產生器 | 根目錄 `config.toml` |
+| 05 設定 | 時間、音量、BGM、編碼品質、配角站位、字型、配色、畫面固定文字；可切換「全域」或「本報告覆寫」 | 兩個 `config.toml` |
+| 06 輸出 | 產生語音、預覽指定時間點、輸出影片（含進度與記錄）、清理用不到的語音 | — |
+
 ## 資料夾
 
 | 路徑 | 內容 |
 |---|---|
-| `config.toml` | 全域設定：角色名冊（名牌、顏色、聲線、像素圖、角色卡）、時間、音量、配角站位 |
-| `characters/` | 角色像素圖 `spr_*.png`：`spr_claude`（閉眼）、`spr_claude_open`（睜眼）、`spr_gpt`、`spr_deepseek_open`（目前使用）、`spr_deepseek`（舊版）、`spr_gemini`（原圖只裁切，高解析度）；片頭角色卡 `card_*.png` |
-| `references/` | 原始參考圖：像素三人組、Claude 睜眼像素圖、DeepSeek 睜眼像素圖、角色立繪卡（`cast_cards.png`）、對話框樣式、Gemini 像素圖與立繪 |
-| `sprites.py` | 角色動畫：Claude、GPT、DeepSeek 只動嘴巴（Claude 依台詞切換睜眼／閉眼兩張圖）；其他角色直接用原圖 |
-| `config.py` | 讀設定檔（全域 + 報告各自的），檢查主持人／配角名單 |
-| `gen_tts.py` | 依劇本產生每句語音 |
-| `render.py` | 合成影片（版面、運鏡、絕區零風格特效、BGM） |
-| `extract_sprites.py` / `extract_trio.py` | 從新參考圖擷取像素角色用（需要時才跑） |
-| `extract_cards.py` | 把 `cast_cards.png` 切成每人一張角色卡（已切好，需要時才跑） |
-| `make_card.py` | 用立繪產生同風格的角色卡（目前產生 Gemini 的，名字、副標寫在檔案裡的 `CARDS`） |
-| `projects/<名稱>/` | 單一份報告：`config.toml` 本次設定、`story.py` 劇本、`shots/` 投影畫面截圖、`audio/` 語音、成品 `presentation.mp4` |
+| `studio.py` | GUI 編輯器 |
+| `config.toml` | 全域設定：時間、音量、編碼、站位、字型與配色、固定文字、角色名冊、角色卡產生設定 |
+| `characters/` | 角色像素圖 `spr_*.png`、片頭角色卡 `card_*.png` |
+| `references/` | 原始參考圖 |
+| `sprites.py` | 嘴巴動畫：`claude`、`gpt`、`deepseek_open` 三張圖有手工嘴型（Claude 依表情切換睜眼／閉眼兩張圖）；其他圖直接用原圖 |
+| `config.py` | 讀寫設定檔（全域 + 報告各自的），檢查主持人／配角名單 |
+| `project.py` | 讀寫 `story.json`、語音檔命名；舊的 `story.py` 第一次開啟時自動轉換 |
+| `gen_tts.py` | 依劇本產生語音（已存在的跳過） |
+| `render.py` | 合成影片 |
+| `make_card.py` | 用立繪產生同風格的角色卡，參數在 `config.toml` 的 `[cards.<名稱>]` |
+| `extract_*.py` | 從參考圖擷取像素角色／切角色卡（需要時才跑） |
+| `projects/<名稱>/` | 單一份報告：`config.toml`、`story.json` 劇本、`shots/` 截圖、`audio/` 語音、成品 `presentation.mp4` |
 
-## 做一份新報告
+## 版本
 
-1. 複製 `projects/hoyo_proxy_hub` 成新資料夾，例如 `projects/my_report`，清掉 `audio/`、`shots/`、`mix.wav`、`presentation.mp4`。
-2. 編輯 `config.toml`（這份報告的設定）：
+| 版本 | Git tag | 內容 |
+|---|---|---|
+| Alpha 0.1.0 | `v0.1.0-alpha` | 初版：劇本寫在 `story.py`、設定改 `config.toml` |
+| Alpha 0.2.0 | `v0.2.0-alpha` | GUI 編輯器 `studio.py`；劇本改為 `story.json`、語音以內容命名、畫面參數移入設定檔 |
 
-   ```toml
-   [show]
-   host = "M"                 # 主持人：C=Claude、G=GPT、D=DeepSeek、M=Gemini
-   guests = ["C", "D"]        # 上鏡配角，順序 = 由左到右站位（片頭角色卡、片尾謝幕也照這份名單）
-   title = "我的報告"
-   subtitle = "期末專題"
-   topbar = "我的報告 · 期末"
-   ```
+語音、混音、成品影片與預覽圖不進版控（見 `.gitignore`），用 `gen_tts.py` / `render.py` 重新產生。
 
-   只要寫想改的項目，其餘沿用根目錄 `config.toml`；那邊的 `[timing]`、`[audio]`、`[layout]`、`[characters.X]` 也都能在這裡覆寫。
-3. 把要投影的畫面截圖（建議寬 1600px）放進 `shots/`。
-4. 編輯 `story.py`：
-   - `SCENES`：每個段落的頻道標籤、標題、預設截圖、台詞；`guests` 寫的角色整段都會站在台上，其他配角只在講話前後出現。
-   - 每句台詞 `(講者, 文字, 表情, 鏡頭, 換圖)`：講者是角色代號，必須是本次的主持人或配角（不在名單會直接報錯）；表情 `o` 睜眼、`c` 閉眼從容、`s` 微笑；鏡頭 `(x, y, 寬)` 是截圖上 16:9 的取景位置，`None` 沿用上一句。
-   - `NOTES`：左上 NOTE 方塊的公式小抄；`POPS`：台詞含某字串時右上跳出的螢光標籤。
-5. 執行（在本資料夾）：
+## 劇本格式（story.json）
 
-```bash
-python gen_tts.py projects/my_report            # 產生語音（已存在的會跳過）
-python render.py projects/my_report preview 5 30  # 先輸出第 5、30 秒的預覽圖
-python render.py projects/my_report             # 輸出完整影片（約 20 分鐘）
+```json
+{
+  "scenes": [
+    {"ch": "CH-01", "title": "專題動機", "shot": "motivation.png", "guests": [], "note": ["大字", "小字"], "lines": [
+      {"who": "C", "text": "台詞", "eyes": "o", "view": [0, 0, 1600], "shot": null}
+    ]}
+  ],
+  "pops": [["台詞包含的字串", "標籤"]]
+}
 ```
 
-改了某句台詞要重錄時，刪掉 `audio/` 裡對應編號的 `.wav` 再跑 `gen_tts.py`。
-改聲線（`config.toml` 的 `voice` / `rate` / `pitch`）後要整個刪掉 `audio/` 重新產生。
+- `eyes`：`o` 睜眼、`s` 微笑、`c` 閉眼從容。
+- `view`：截圖上 16:9 的取景 `[x, y, 寬]`；`null` 沿用上一句。`shot`：這句起換截圖，`null` 沿用。
+- `guests`：整段都站在台上的配角；其他配角只在講話前後出現。
+
+## 語音檔
+
+`audio/` 裡的檔名是「台詞文字 + 角色聲線／語速／音高」的雜湊。改台詞、插入或刪除台詞、改角色聲線，只有受影響的句子會在下次產生語音時重錄，不會錯位。
+GUI 的「清理用不到的語音」可以刪掉舊版本留下的檔案。
+
+## 命令列（GUI 做的事也可以直接跑）
+
+```bash
+python gen_tts.py projects/my_report                 # 產生語音
+python render.py projects/my_report preview 5 30 #12 # 預覽第 5、30 秒與第 12 句（沒有語音的句子以靜音估算）
+python render.py projects/my_report                  # 輸出完整影片
+python make_card.py gemini                           # 依 [cards.gemini] 產生角色卡
+```
 
 ## 新增角色
 
-1. 像素圖放進 `characters/spr_<名字>.png`（去背）。不是格狀像素圖的高解析度圖，在名冊加 `hires = true`，會縮放到和其他角色一樣高（沒有嘴巴動畫）。
-2. 角色卡：在 `make_card.py` 的 `CARDS` 加一筆（立繪路徑、名字、副標、顏色），執行 `python make_card.py <名字>`。
-3. 在根目錄 `config.toml` 加 `[characters.<代號>]`（名牌、顏色、聲線、`sprite`、`card`）。
+1. 像素圖放進 `characters/spr_<名字>.png`（去背；GUI「04 角色」可以匯入）。不是格狀像素圖就勾「高解析度圖」。
+2. 角色卡：匯入現成的 `card_<名字>.png`，或在 GUI 建立產生設定後按「產生角色卡」。
+3. 在 GUI 按「＋ 新角色」，填名稱、名牌色、聲線、立繪、角色卡。
 
 ## 需要的環境
 
-- Python 3.11 以上：`pillow`、`numpy`、`edge-tts`（產生語音需要網路）
+- Python 3.11 以上：`pillow`、`numpy`、`edge-tts`（產生語音、試聽需要網路）；GUI 只用內建的 tkinter
 - `ffmpeg`、`ffprobe` 在 PATH 上
-- Windows 字型：微軟正黑體（`msjhbd.ttc`）、Segoe UI Black、Segoe UI / Segoe UI Bold、Segoe UI Symbol、Consolas
+- Windows 字型：微軟正黑體（`msjhbd.ttc`）、Segoe UI Black、Segoe UI / Segoe UI Bold、Segoe UI Symbol、Consolas（可在「05 設定」改）

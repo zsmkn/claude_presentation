@@ -66,24 +66,24 @@ def deepseek(eyes, mouth):
     return im
 
 
-CHARS = {"C": claude, "G": gpt, "D": deepseek}     # characters with hand-made mouth animation
+ANIMATED = {"claude": claude, "gpt": gpt, "deepseek_open": deepseek}   # sprite name -> hand-made mouth animation
 
 
-def draw(code, sprite_name, eyes, mouth):
-    """Animated sprite if the character has one, else characters/spr_<sprite_name>.png as is."""
-    fn = CHARS.get(code)
+def draw(sprite_name, eyes, mouth):
+    """Animated sprite if that art has one, else characters/spr_<sprite_name>.png as is."""
+    fn = ANIMATED.get(sprite_name)
     return fn(eyes, mouth) if fn else _load(sprite_name).copy()
 
 if __name__ == "__main__":
     z = 10
-    boxes = {"C": (22, 18, 62, 48), "G": (28, 24, 68, 54), "D": (20, 18, 60, 48)}
+    boxes = {"claude": (22, 18, 62, 48), "gpt": (28, 24, 68, 54), "deepseek_open": (20, 18, 60, 48)}
     combos = [("open", "closed"), ("open", "open"), ("calm", "closed"), ("calm", "open")]
     out = Image.new("RGBA", (4 * 400, 3 * 300), (247, 240, 230, 255))
-    for r, (c, fn) in enumerate(CHARS.items()):
+    for r, (c, fn) in enumerate(ANIMATED.items()):
         for k, (e, m) in enumerate(combos):
             s = fn(e, m)
-            if c == "C" and e == "open":
-                bx = (boxes["C"][0] + 2, boxes["C"][1] + 2, boxes["C"][2] + 2, boxes["C"][3] + 2)
+            if c == "claude" and e == "open":
+                bx = (boxes[c][0] + 2, boxes[c][1] + 2, boxes[c][2] + 2, boxes[c][3] + 2)
             else:
                 bx = boxes[c]
             s = s.crop(bx).resize((400, 300), Image.NEAREST)

@@ -1,4 +1,6 @@
-"""Render the presentation video: pixel-style VN layout hosted by Claude."""
+"""Render the presentation video: pixel-style VN layout hosted by Claude.
+python render.py projects/<name>                    full video -> presentation.mp4
+python render.py projects/<name> preview 5 30 #12   preview frames at 5 s, 30 s and the middle of line 12"""
 import math, subprocess, sys, wave
 from functools import lru_cache
 from pathlib import Path
@@ -9,31 +11,34 @@ import project
 import sprites
 
 PROJ, _story = project.load()
+PREVIEW = len(sys.argv) > 2 and sys.argv[2] == "preview"
 SCENES = _story.SCENES
-NOTES = getattr(_story, "NOTES", {})
-POPS = getattr(_story, "POPS", [])
+POPS = _story.POPS
 CFG = config.load(PROJ)
 SPEAKERS = CFG["characters"]
 HOST, GUESTS = config.cast(CFG, SCENES)
-SHOW, TIMING, AUDIO = CFG["show"], CFG["timing"], CFG["audio"]
-# 片頭大標、片頭副標、畫面右上角小字：config.toml > story.py > 資料夾名稱
-TITLE = SHOW.get("title") or getattr(_story, "TITLE", PROJ.name)
-SUBTITLE = SHOW.get("subtitle") or getattr(_story, "SUBTITLE", "")
-TOPBAR = SHOW.get("topbar") or getattr(_story, "TOPBAR", TITLE)
+SHOW, TIMING, AUDIO, STYLE, TEXT = CFG["show"], CFG["timing"], CFG["audio"], CFG["style"], CFG["text"]
+# 片頭大標、片頭副標、畫面右上角小字：config.toml > 資料夾名稱
+TITLE = SHOW.get("title") or PROJ.name
+SUBTITLE = SHOW.get("subtitle", "")
+TOPBAR = SHOW.get("topbar") or TITLE
 
 FPS = TIMING["fps"]
 VW, VH = 1920, 1080
 SR = 24000
 SHOTS = PROJ / "shots"
-FONT_B = "C:/Windows/Fonts/msjhbd.ttc"
-FONT_LAT = "C:/Windows/Fonts/seguibl.ttf"
-FONT_MONO = "C:/Windows/Fonts/consolab.ttf"
+FONT_B = STYLE["font_cjk"]
+FONT_LAT = STYLE["font_latin"]
+FONT_MONO = STYLE["font_mono"]
+FONT_SYM = STYLE["font_symbol"]
 
-CREAM = (247, 240, 230)
-DOT = (228, 214, 196)
-INK = (59, 31, 20)
-PAPER = (253, 247, 238)
-ORANGE = (232, 102, 28)
+CREAM = STYLE["cream"]
+DOT = STYLE["dot"]
+INK = STYLE["ink"]
+PAPER = STYLE["paper"]
+ORANGE = STYLE["accent"]
+MUTED = STYLE["muted"]
+LIME = STYLE["lime"]
 
 MON = (636, 132, 1184, 666)          # monitor inner x, y, w, h
 DLG = (60, 836, 1800, 214)           # dialog box x, y, w, h
@@ -64,7 +69,6 @@ def font(path, size, index=0):
     return ImageFont.truetype(path, size, index=index)
 
 
-FONT_SYM = "C:/Windows/Fonts/seguisym.ttf"
 _MISSING = {}
 
 
@@ -132,23 +136,23 @@ def scene_bg(base, sc):
     d.text((40 + t.width + 22, 28), sc["title"], font=font(FONT_B, 50), fill=INK)
     sub = TOPBAR
     f = font(FONT_B, 26)
-    d.text((VW - 40 - d.textlength(sub, font=f), 44), sub, font=f, fill=(150, 110, 90))
+    d.text((VW - 40 - d.textlength(sub, font=f), 44), sub, font=f, fill=MUTED)
     # note box
     nb = pixel_box(500, 112, fill=(255, 251, 244), bw=4, shadow=8)
     im.alpha_composite(nb, (60, 116))
     nt = tag("NOTE", (60, 60, 70), 22, 10, 2)
     im.alpha_composite(nt, (76, 100))
-    a, b = NOTES.get(sc["ch"], ("", ""))
+    a, b = sc["note"]
     d = ImageDraw.Draw(im)
     draw_mixed(d, (86, 138), a, 38, INK)
-    draw_mixed(d, (86, 186), b, 26, (150, 110, 90))
+    draw_mixed(d, (86, 186), b, 26, MUTED)
     return im
 
 
 # ---------------- sprites ----------------
 @lru_cache(None)
 def sprite(who, eyes, mouth, scale, flip=False):
-    im = sprites.draw(who, SPEAKERS[who]["sprite"], eyes, mouth)
+    im = sprites.draw(SPEAKERS[who]["sprite"], eyes, mouth)
     if flip:
         im = im.transpose(Image.FLIP_LEFT_RIGHT)
     if SPEAKERS[who].get("hires"):  # hi-res art: shrink smoothly to the height of a ~110-row pixel sprite
@@ -252,8 +256,13 @@ def dialog_img(who, text, n, show_arrow):
 
 
 # ---------------- timeline ----------------
-def load_audio(k):
-    with wave.open(str(PROJ / "audio" / f"{k:03d}.wav")) as w:
+def load_audio(who, text):
+    path = project.audio_path(PROJ, SPEAKERS[who], text)
+    if not path.exists():
+        if not PREVIEW:
+            sys.exit(f"缺少語音：{SPEAKERS[who]['name']}「{text}」，請先執行 gen_tts.py")
+        return np.zeros(int(SR * max(1.0, len(text) * 0.2)), np.float32)   # preview without TTS: silence
+    with wave.open(str(path)) as w:
         a = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
     return a
 
@@ -264,7 +273,7 @@ def build_timeline():
         t += SCENE_INTRO
         sc_lines = sc["lines"]
         for li, ln in enumerate(sc_lines):
-            a = load_audio(k)
+            a = load_audio(ln[0], ln[1])
             dur = len(a) / SR
             hop = SR // FPS
             rms = np.array([np.sqrt(np.mean(a[i:i + hop] ** 2)) if i < len(a) else 0 for i in range(0, len(a) + hop, hop)])
@@ -338,7 +347,7 @@ def build_audio(tl, total, scene_starts):
             sq = np.sign(np.sin(2 * np.pi * np.cumsum(fq) / SR)) * np.exp(-tt * 30) * 0.07 * AUDIO["sfx_volume"]
             mix[s:s + L] += sq.astype(np.float32)
     # soft chiptune BGM
-    bpm = 84; beat = 60 / bpm
+    bpm = AUDIO["bgm_bpm"]; beat = 60 / bpm
     chords = [(261.6, 329.6, 392.0), (220.0, 261.6, 329.6), (174.6, 220.0, 261.6), (196.0, 246.9, 293.7)]
     t = np.arange(n) / SR
     bgm = np.zeros(n, np.float32)
@@ -371,7 +380,7 @@ def build_audio(tl, total, scene_starts):
 
 
 # ---------------- frame composition ----------------
-SYMS = ["∑", "π", "∫", "√", "Δ", "∞", "≈", "λ", "θ", "∂", "H₂O", "∝", "e^iπ"]
+SYMS = TEXT["symbols"]
 
 
 @lru_cache(None)
@@ -379,7 +388,7 @@ def sym_img(s):
     f = font(FONT_SYM, 54)
     bb = f.getbbox(s)
     im = Image.new("RGBA", (bb[2] + 8, bb[3] + 8), (0, 0, 0, 0))
-    ImageDraw.Draw(im).text((4, 4), s, font=f, fill=(222, 196, 168, 150))
+    ImageDraw.Draw(im).text((4, 4), s, font=f, fill=DOT[:3] + (150,))
     return im
 
 
@@ -406,7 +415,7 @@ def title_card(t, base):
     k = ease(t / 0.8)
     c = cast_img()
     fr.alpha_composite(c, (960 - c.width // 2, 300 + int((1 - k) * 60)))
-    tg = tag("主持  " + SPEAKERS[HOST]["name"], SPEAKERS[HOST]["color"], 34)
+    tg = tag(TEXT["host_label"] + "  " + SPEAKERS[HOST]["name"], SPEAKERS[HOST]["color"], 34)
     fr.alpha_composite(tg, (960 - c.width // 2 + 60, 290))
     return fr
 
@@ -434,18 +443,14 @@ def end_card(t, base):
     box = pixel_box(1000, 230, fill=PAPER, bw=7, shadow=14)
     fr.alpha_composite(box, (460, 120))
     d = ImageDraw.Draw(fr)
-    f1 = font(FONT_LAT, 120)
-    s = "THANK YOU"
+    f1 = font(FONT_LAT, 120) if s.isascii() else font(FONT_B, 112)
+    s = TEXT["end_card"]
     d.text((960 - d.textlength(s, font=f1) / 2, 140), s, font=f1, fill=ORANGE, stroke_width=5, stroke_fill=INK)
     for who, x in END_CAST:
         bob = 8 if int(t * 2.5 + x) % 2 else 0
         sp = sprite(who, "smile", "smile", 4)
         fr.alpha_composite(sp, (x + 150 - sp.width // 2, 980 - sp.height - bob))
     return fr
-
-
-LIME = (212, 245, 60)
-
 
 
 @lru_cache(None)
@@ -456,8 +461,8 @@ def hazard_tape():
     for x in range(-h, w, 36):                    # black chevrons top & bottom
         d.polygon([(x, 0), (x + 18, 0), (x + 10, 7), (x - 8, 7)], fill=(16, 16, 16, 255))
         d.polygon([(x, h - 7), (x + 18, h - 7), (x + 10, h), (x - 8, h)], fill=(16, 16, 16, 255))
-    f = font(FONT_LAT, 30)
-    txt = "CAUTION  //  HOLLOW ZONE  //  PROXY ONLY  //  SIGNAL LOST  //  "
+    txt = TEXT["hazard_tape"]
+    f = font(FONT_LAT if txt.isascii() else FONT_B, 30)
     x = 0
     while x < w:
         d.text((x, 9), txt, font=f, fill=(16, 16, 16, 255))
@@ -574,12 +579,14 @@ def main(limit=None, only=None):
 
     nframes = int(total * FPS)
     frames = range(nframes)
-    if only is not None:
-        frames = [int(x * FPS) for x in only]
+    if only is not None:   # seconds, or "#k" = the middle of script line k (0-based, counted through all scenes)
+        at = lambda x: tl[int(x[1:])]["start"] + tl[int(x[1:])]["dur"] * 0.6 if x.startswith("#") else float(x)
+        frames = [int(at(x) * FPS) for x in only]
     out = None
     if only is None:
         cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{VW}x{VH}",
-               "-r", str(FPS), "-i", "-", "-i", str(PROJ / "mix.wav"), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+               "-r", str(FPS), "-i", "-", "-i", str(PROJ / "mix.wav"), "-c:v", "libx264",
+               "-preset", CFG["video"]["preset"], "-crf", str(CFG["video"]["crf"]),
                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
                str(PROJ / "presentation.mp4")]
         out = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -624,13 +631,13 @@ def main(limit=None, only=None):
             ts = t - scene_starts[si]
             cut = prev_e is not None and prev_e["shot_r"] != e["shot_r"] and 0 <= t - e["start"] < 0.18
             if ts < 0.45 or cut:
-                fr.paste(static_noise(MON[2], MON[3], (232, 102, 28)), (MON[0], MON[1]))
+                fr.paste(static_noise(MON[2], MON[3], ORANGE), (MON[0], MON[1]))
             fr.alpha_composite(scanlines(), (MON[0], MON[1]))
             dd = ImageDraw.Draw(fr)
             if int(t * 1.5) % 2 == 0:
                 dd.ellipse([MON[0] + 18, MON[1] + 16, MON[0] + 34, MON[1] + 32], fill=(255, 60, 60))
             fm = font(FONT_MONO, 22)
-            dd.text((MON[0] + 42, MON[1] + 12), "REC", font=fm, fill=(255, 255, 255))
+            dd.text((MON[0] + 42, MON[1] + 12), TEXT["rec"], font=fm, fill=(255, 255, 255))
             tc = f"{SCENES[si]['ch']}  {int(t // 60):02d}:{int(t % 60):02d}:{int(t * FPS) % FPS:02d}"
             dd.text((MON[0] + MON[2] - 18 - dd.textlength(tc, font=fm), MON[1] + 12), tc, font=fm, fill=LIME)
             # channel banner
@@ -703,7 +710,9 @@ def main(limit=None, only=None):
         if out:
             out.stdin.write(rgb.tobytes())
         else:
-            Image.fromarray(rgb).save(PROJ / f"preview_{t:07.2f}.png")
+            path = PROJ / f"preview_{t:07.2f}.png"
+            Image.fromarray(rgb).save(path)
+            print("PREVIEW", path, flush=True)
         if fi % (FPS * 30) == 0:
             print(f"{t:.0f}s / {total:.0f}s", flush=True)
     if out:
@@ -711,7 +720,7 @@ def main(limit=None, only=None):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2 and sys.argv[2] == "preview":
-        main(only=[float(x) for x in sys.argv[3:]])
+    if PREVIEW:
+        main(only=sys.argv[3:])
     else:
         main()

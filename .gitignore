@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# 可以重新產生的輸出（語音、混音、成品、預覽、紀錄）
+projects/
+references/
+
+# 本機狀態
+.studio_state.json
+node_modules/
